@@ -1,0 +1,197 @@
+int main()
+{
+    a = 5 + 3;
+    b = 10 - 2;
+    c = a * b;
+    d = 100 / 4;
+    e = c + d;
+}
+
+
+
+
+
+
+
+
+import java.io.*;
+import java.util.*;
+
+class CodeLine {
+    String lhs;
+    String rhs;
+
+    CodeLine(String lhs, String rhs) {
+        this.lhs = lhs;
+        this.rhs = rhs;
+    }
+}
+
+public class optimizer {
+
+    static List<CodeLine> tac = new ArrayList<>();
+    static Map<String, String> constants = new HashMap<>();
+
+    public static boolean isNumber(String s) {
+        if (s == null || s.isEmpty()) return false;
+        for (char ch : s.toCharArray()) {
+            if (!Character.isDigit(ch)) return false;
+        }
+        return true;
+    }
+
+    public static int evaluate(String l, String r, char op) {
+        int a = Integer.parseInt(l);
+        int b = Integer.parseInt(r);
+        switch (op) {
+            case '+': return a + b;
+            case '-': return a - b;
+            case '*': return a * b;
+            case '/': return b != 0 ? a / b : 0;
+            default: return 0;
+        }
+    }
+
+    public static void parseLine(String line) {
+        int eqPos = line.indexOf('=');
+        int scPos = line.indexOf(';');
+
+        if (eqPos == -1 || scPos == -1 ||
+            line.contains("if") || line.contains("while") ||
+            line.contains("{") || line.contains("}")) return;
+
+        String lhs = line.substring(0, eqPos).replaceAll("\\s+", "");
+        String rhs = line.substring(eqPos + 1, scPos).replaceAll("\\s+", "");
+        tac.add(new CodeLine(lhs, rhs));
+    }
+
+    public static void constantFolding() {
+        List<CodeLine> newTAC = new ArrayList<>();
+        constants.clear();
+
+        for (CodeLine line : tac) {
+            String rhs = line.rhs;
+            int opPos = findOperatorPos(rhs);
+            if (opPos != -1) {
+                String l = rhs.substring(0, opPos);
+                String r = rhs.substring(opPos + 1);
+                char op = rhs.charAt(opPos);
+                if (isNumber(l) && isNumber(r)) {
+                    int val = evaluate(l, r, op);
+                    newTAC.add(new CodeLine(line.lhs, Integer.toString(val)));
+                    continue;
+                }
+            }
+            newTAC.add(line);
+        }
+        tac = newTAC;
+    }
+
+    public static void constantPropagation() {
+        Map<String, String> constTable = new HashMap<>();
+        boolean changed;
+        do {
+            changed = false;
+            List<CodeLine> newTAC = new ArrayList<>();
+            for (CodeLine line : tac) {
+                String rhs = line.rhs;
+                int opPos = findOperatorPos(rhs);
+                if (opPos != -1) {
+                    String l = rhs.substring(0, opPos);
+                    String r = rhs.substring(opPos + 1);
+                    char op = rhs.charAt(opPos);
+
+                    if (constTable.containsKey(l)) l = constTable.get(l);
+                    if (constTable.containsKey(r)) r = constTable.get(r);
+
+                    rhs = l + op + r;
+
+                    if (isNumber(l) && isNumber(r)) {
+                        int val = evaluate(l, r, op);
+                        rhs = Integer.toString(val);
+                        constTable.put(line.lhs, rhs);
+                        changed = true;
+                    }
+                } else {
+                    if (constTable.containsKey(rhs)) {
+                        rhs = constTable.get(rhs);
+                        changed = true;
+                    }
+                }
+                newTAC.add(new CodeLine(line.lhs, rhs));
+            }
+            tac = newTAC;
+        } while (changed);
+    }
+
+    public static void completeOptimization() {
+        constantFolding();
+        constantPropagation();
+        constantFolding();
+    }
+
+    public static void printTAC() {
+        for (CodeLine line : tac) {
+            System.out.println(line.lhs + " = " + line.rhs + ";");
+        }
+    }
+
+    public static void printOptimizedCode() {
+        System.out.println("\nint main()\n{");
+        for (CodeLine line : tac) {
+            System.out.println("    " + line.lhs + " = " + line.rhs + ";");
+        }
+        System.out.println("}");
+    }
+
+    public static int findOperatorPos(String str) {
+        for (int i = 0; i < str.length(); i++) {
+            if ("+-*/".indexOf(str.charAt(i)) != -1) return i;
+        }
+        return -1;
+    }
+
+    public static void main(String[] args) {
+        @SuppressWarnings("resource")
+        Scanner sc = new Scanner(System.in);
+        System.out.println("Choose Optimization Type:\n1. Constant Folding\n2. Constant Propagation\nEnter choice: ");
+        int choice = sc.nextInt();
+        sc.nextLine(); // consume newline
+        System.out.print("Enter C input file name: ");
+        String filename = sc.nextLine();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            tac.clear();
+            constants.clear();
+
+            String line;
+            while ((line = br.readLine()) != null) {
+                parseLine(line);
+            }
+
+            System.out.println("\n============= Original Three Address Code ==============\n");
+            printTAC();
+
+            switch (choice) {
+                case 1:
+                    constantFolding();
+                    break;
+                case 2:
+                    constantPropagation();
+                    break;
+                case 3:
+                    completeOptimization();
+                    break;
+                default:
+                    System.out.println("Invalid choice");
+                    return;
+            }
+
+            System.out.println("\n============= Optimized Code ==============");
+            printOptimizedCode();
+
+        } catch (IOException e) {
+            System.err.println("Error opening file: " + e.getMessage());
+        }
+    }
+}
