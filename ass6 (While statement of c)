@@ -1,0 +1,184 @@
+while (x < 5) {
+    x = x + 1;
+}
+
+
+
+
+  %{
+#include "ass6.tab.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+extern struct TokenEntry {
+    int line;
+    char token[50];
+    char value[50];
+} tokenTable[1000];
+
+extern int tokenCount;
+extern int line_num;
+
+void addToken(const char* token, const char* value) {
+    tokenTable[tokenCount].line = line_num;
+    strcpy(tokenTable[tokenCount].token, token);
+    strcpy(tokenTable[tokenCount].value, value);
+    tokenCount++;
+}
+%}
+
+%option noyywrap
+
+DIGIT      [0-9]
+ID         [a-zA-Z_][a-zA-Z0-9_]*
+NUMBER     {DIGIT}+
+
+%%
+
+"while"     { addToken("WHILE", yytext); return WHILE; }
+"("         { addToken("LPAREN", yytext); return LPAREN; }
+")"         { addToken("RPAREN", yytext); return RPAREN; }
+"{"         { addToken("LBRACE", yytext); return LBRACE; }
+"}"         { addToken("RBRACE", yytext); return RBRACE; }
+"<"         { addToken("LT", yytext); return LT; }
+"+"         { addToken("PLUS", yytext); return PLUS; }
+"="         { addToken("ASSIGN", yytext); return ASSIGN; }
+";"         { addToken("SEMI", yytext); return SEMI; }
+
+{ID}        { addToken("ID", yytext); yylval.str = strdup(yytext); return ID; }
+{NUMBER}    { addToken("NUMBER", yytext); yylval.str = strdup(yytext); return NUMBER; }
+
+[ \t]+      ;
+\n          { line_num++; }
+
+.           { fprintf(stderr, "Unknown character: %s\n", yytext); }
+
+%%
+
+
+
+
+
+
+
+%{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct TreeNode {
+    char label[100];
+    struct TreeNode* left;
+    struct TreeNode* next;
+};
+
+struct TokenEntry {
+    int line;
+    char token[50];
+    char value[50];
+};
+
+struct TokenEntry tokenTable[1000];
+int tokenCount = 0;
+int line_num = 1;
+
+int yylex(void);
+void yyerror(const char *s);
+extern FILE *yyin;
+
+struct TreeNode* createNode(const char* label) {
+    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));
+    strcpy(node->label, label);
+    node->left = node->next = NULL;
+    return node;
+}
+
+void printTree(struct TreeNode* node, int depth) {
+    if (!node) return;
+    for (int i = 0; i < depth; i++) printf("  ");
+    printf("|-- %s\n", node->label);
+    if (node->left) printTree(node->left, depth + 1);
+    if (node->next) printTree(node->next, depth);
+}
+%}
+
+%union {
+    char* str;
+    struct TreeNode* node;
+}
+
+%token <str> ID NUMBER
+%token WHILE LPAREN RPAREN LBRACE RBRACE LT ASSIGN PLUS SEMI
+%left LT
+%left PLUS
+%type <node> stmt expr stmt_list program assignment
+
+%%
+
+program: stmt_list { printTree($1, 0); };
+
+stmt_list: 
+    stmt stmt_list { $1->next = $2; $$ = $1; }
+    | { $$ = NULL; }
+    ;
+
+stmt:
+    WHILE LPAREN expr RPAREN LBRACE stmt_list RBRACE {
+        $$ = createNode("while");
+        $$->left = $3;
+        $3->next = $6;
+    }
+    | assignment { $$ = $1; }
+    ;
+
+assignment:
+    ID ASSIGN expr SEMI {
+        $$ = createNode("assign");
+        $$->left = createNode($1);
+        $$->left->next = $3;
+    }
+    ;
+
+expr:
+    expr LT expr { $$ = createNode("<"); $$->left = $1; $1->next = $3; }
+    | expr PLUS expr { $$ = createNode("+"); $$->left = $1; $1->next = $3; }
+    | ID { $$ = createNode($1); }
+    | NUMBER { $$ = createNode($1); }
+    ;
+
+%%
+
+int main(int argc, char *argv[]) {
+    if (argc > 1) {
+        yyin = fopen(argv[1], "r");
+        if (!yyin) {
+            fprintf(stderr, "Error opening file: %s\n", argv[1]);
+            return 1;
+        }
+    }
+
+    printf("\n Parse Tree \n");
+    printf("===========================================\n");
+    yyparse();
+
+    printf("\n===========================================\n");
+    printf("\n|                Token Table               |\n");
+    printf("\n===========================================\n");
+    printf("| %-7s | %-12s | %-15s |\n", "Line No", "Token", "Token Value");
+    printf("===========================================\n");
+    for (int i = 0; i < tokenCount; i++) {
+        printf("| %-7d | %-12s | %-15s |\n",
+               tokenTable[i].line,
+               tokenTable[i].token,
+               tokenTable[i].value);
+    }
+    printf("===========================================\n");
+
+    if (argc > 1) fclose(yyin);
+    return 0;
+}
+
+void yyerror(const char *s) {
+    fprintf(stderr, "Error: %s at line %d\n", s, line_num);
+}
