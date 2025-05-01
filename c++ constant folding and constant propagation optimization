@@ -1,0 +1,219 @@
+int main()
+{
+    a = 5 + 3;
+    b = 10 - 2;
+    c = a * b;
+    d = 100 / 4;
+    e = c + d;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <cctype>
+#include <algorithm>
+#include <vector>
+#include <map>
+using namespace std;
+
+struct CodeLine {
+    string lhs;
+    string rhs;
+};
+
+vector<CodeLine> tac;
+map<string, string> constants;
+
+bool isNumber(const string& s) {
+    if (s.empty()) return false;
+    for (char ch : s)
+        if (!isdigit(ch)) return false;
+    return true;
+}
+
+int evaluate(string l, string r, char op) {
+    int a = stoi(l), b = stoi(r);
+    switch (op) {
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return b != 0 ? a / b : 0;
+        default: return 0;
+    }
+}
+
+string getConstValue(const string& key) {
+    auto it = constants.find(key);
+    return it != constants.end() ? it->second : key;
+}
+
+void parseLine(const string& line) {
+    size_t eqPos = line.find('=');
+    size_t scPos = line.find(';');
+    
+    if (eqPos == string::npos || scPos == string::npos || 
+        line.find("if") != string::npos || line.find("while") != string::npos ||
+        line.find("{") != string::npos || line.find("}") != string::npos)
+        return;
+
+    string lhs = line.substr(0, eqPos);
+    lhs.erase(remove(lhs.begin(), lhs.end(), ' '), lhs.end());
+    string rhs = line.substr(eqPos + 1, scPos - eqPos - 1);
+    rhs.erase(remove_if(rhs.begin(), rhs.end(), ::isspace), rhs.end());
+    
+    tac.push_back({lhs, rhs});
+}
+
+void constantFolding() {
+    vector<CodeLine> newTAC;
+    constants.clear();
+
+    for (auto& line : tac) {
+        string rhs = line.rhs;
+        size_t opPos = rhs.find_first_of("+-*/");
+        
+        if (opPos != string::npos) {
+            string l = rhs.substr(0, opPos);
+            string r = rhs.substr(opPos + 1);
+            char op = rhs[opPos];
+            
+            if (isNumber(l) && isNumber(r)) {
+                int val = evaluate(l, r, op);
+                newTAC.push_back({line.lhs, to_string(val)});
+                continue;
+            }
+        }
+        
+        newTAC.push_back(line);
+    }
+    
+    tac = newTAC;
+}
+
+void constantPropagation() {
+    vector<CodeLine> newTAC;
+    map<string, string> constTable;
+    bool changed;
+
+    do {
+        changed = false;
+        newTAC.clear();
+        
+        for (auto& line : tac) {
+            string rhs = line.rhs;
+            size_t opPos = rhs.find_first_of("+-*/");
+            
+            if (opPos != string::npos) {
+                string l = rhs.substr(0, opPos);
+                string r = rhs.substr(opPos + 1);
+                char op = rhs[opPos];
+                
+                // Substitute known constants
+                if (constTable.count(l)) l = constTable[l];
+                if (constTable.count(r)) r = constTable[r];
+                
+                rhs = l + string(1, op) + r;
+                
+                // If both sides are now numbers, evaluate
+                if (isNumber(l) && isNumber(r)) {
+                    int val = evaluate(l, r, op);
+                    rhs = to_string(val);
+                    constTable[line.lhs] = rhs;
+                    changed = true;
+                }
+            } else {
+                if (constTable.count(rhs)) {
+                    rhs = constTable[rhs];
+                    changed = true;
+                }
+            }
+            
+            newTAC.push_back({line.lhs, rhs});
+        }
+        
+        tac = newTAC;
+    } while (changed);
+}
+
+void completeOptimization() {
+    // First do constant folding
+    constantFolding();
+    
+    // Then do constant propagation
+    constantPropagation();
+    
+    // Finally, fold any new constant expressions
+    constantFolding();
+}
+
+void printTAC() {
+    for (auto& line : tac)
+        cout << line.lhs << " = " << line.rhs << ";\n";
+}
+
+void printOptimizedCode() {
+    cout << "\nint main()\n{\n";
+    for (auto& line : tac)
+        cout << "    " << line.lhs << " = " << line.rhs << ";\n";
+    cout << "}\n";
+}
+
+int main() {
+    int choice;
+    cout << "Choose Optimization Type:\n1. Constant Folding\n2. Constant Propagation\nEnter choice: ";
+    cin >> choice;
+
+    string filename;
+    cout << "Enter C input file name: ";
+    cin >> filename;
+
+    ifstream fin(filename);
+    if (!fin.is_open()) {
+        cerr << "Error opening file.\n";
+        return 1;
+    }
+
+    tac.clear();
+    constants.clear();
+    
+    string line;
+    while (getline(fin, line)) {
+        parseLine(line);
+    }
+    fin.close();
+
+    cout << "\n============= Original Three Address Code ==============\n\n";
+    printTAC();
+
+    switch (choice) {
+        case 1: 
+            constantFolding();
+            break;
+        case 2: 
+            constantPropagation(); 
+            break;
+        case 3: 
+            completeOptimization();
+            break;
+        default: 
+            cout << "Invalid choice\n"; 
+            return 1;
+    }
+
+    cout << "\n============= Optimized Code ==============\n";
+    printOptimizedCode();
+
+    return 0;
+}
