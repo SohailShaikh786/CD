@@ -1,0 +1,237 @@
+int main()
+{
+    a = 5 + 3;
+    b = 10 - 2;
+    c = a * b;
+    d = 100 / 4;
+    e = c + d;
+}
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MAX_LINES 100
+#define MAX_LEN 100
+
+typedef struct {
+    char lhs[MAX_LEN];
+    char rhs[MAX_LEN];
+} CodeLine;
+
+CodeLine tac[MAX_LINES];
+int tac_count = 0;
+
+typedef struct {
+    char key[MAX_LEN];
+    char value[MAX_LEN];
+} Constant;
+
+Constant constants[MAX_LINES];
+int const_count = 0;
+
+int isNumber(const char *s) {
+    if (*s == '\0') return 0;
+    for (int i = 0; s[i]; ++i)
+        if (!isdigit(s[i])) return 0;
+    return 1;
+}
+
+int evaluate(const char *l, const char *r, char op) {
+    int a = atoi(l), b = atoi(r);
+    switch (op) {
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return b != 0 ? a / b : 0;
+        default: return 0;
+    }
+}
+
+void trimWhitespace(char *str) {
+    char *dst = str;
+    for (char *src = str; *src != '\0'; ++src)
+        if (!isspace((unsigned char)*src))
+            *dst++ = *src;
+    *dst = '\0';
+}
+
+void parseLine(const char *line) {
+    if (strstr(line, "if") || strstr(line, "while") || strstr(line, "{") || strstr(line, "}"))
+        return;
+
+    const char *eq = strchr(line, '=');
+    const char *sc = strchr(line, ';');
+    if (!eq || !sc) return;
+
+    char lhs[MAX_LEN], rhs[MAX_LEN];
+    strncpy(lhs, line, eq - line);
+    lhs[eq - line] = '\0';
+    strncpy(rhs, eq + 1, sc - eq - 1);
+    rhs[sc - eq - 1] = '\0';
+    trimWhitespace(lhs);
+    trimWhitespace(rhs);
+
+    strcpy(tac[tac_count].lhs, lhs);
+    strcpy(tac[tac_count].rhs, rhs);
+    tac_count++;
+}
+
+void constantFolding() {
+    CodeLine newTAC[MAX_LINES];
+    int newCount = 0;
+
+    for (int i = 0; i < tac_count; ++i) {
+        char *rhs = tac[i].rhs;
+        char *opPos = strpbrk(rhs, "+-*/");
+        if (opPos) {
+            int pos = opPos - rhs;
+            char l[MAX_LEN], r[MAX_LEN];
+            strncpy(l, rhs, pos);
+            l[pos] = '\0';
+            strcpy(r, rhs + pos + 1);
+            char op = rhs[pos];
+
+            if (isNumber(l) && isNumber(r)) {
+                int val = evaluate(l, r, op);
+                sprintf(newTAC[newCount].lhs, "%s", tac[i].lhs);
+                sprintf(newTAC[newCount].rhs, "%d", val);
+                newCount++;
+                continue;
+            }
+        }
+        newTAC[newCount++] = tac[i];
+    }
+
+    for (int i = 0; i < newCount; ++i)
+        tac[i] = newTAC[i];
+    tac_count = newCount;
+}
+
+const char *getConstValue(const char *key) {
+    for (int i = 0; i < const_count; ++i)
+        if (strcmp(constants[i].key, key) == 0)
+            return constants[i].value;
+    return key;
+}
+
+void constantPropagation() {
+    CodeLine newTAC[MAX_LINES];
+    int changed;
+
+    do {
+        changed = 0;
+        int newCount = 0;
+
+        for (int i = 0; i < tac_count; ++i) {
+            char rhs[MAX_LEN];
+            strcpy(rhs, tac[i].rhs);
+            char *opPos = strpbrk(rhs, "+-*/");
+
+            if (opPos) {
+                int pos = opPos - rhs;
+                char l[MAX_LEN], r[MAX_LEN], new_rhs[MAX_LEN];
+                strncpy(l, rhs, pos);
+                l[pos] = '\0';
+                strcpy(r, rhs + pos + 1);
+                char op = rhs[pos];
+
+                const char *lval = getConstValue(l);
+                const char *rval = getConstValue(r);
+
+                if (isNumber(lval) && isNumber(rval)) {
+                    int val = evaluate(lval, rval, op);
+                    sprintf(newTAC[newCount].lhs, "%s", tac[i].lhs);
+                    sprintf(newTAC[newCount].rhs, "%d", val);
+                    strcpy(constants[const_count].key, tac[i].lhs);
+                    sprintf(constants[const_count++].value, "%d", val);
+                    changed = 1;
+                } else {
+                    sprintf(new_rhs, "%s%c%s", lval, op, rval);
+                    sprintf(newTAC[newCount].lhs, "%s", tac[i].lhs);
+                    sprintf(newTAC[newCount].rhs, "%s", new_rhs);
+                }
+            } else {
+                const char *val = getConstValue(rhs);
+                if (strcmp(val, rhs) != 0) changed = 1;
+                sprintf(newTAC[newCount].lhs, "%s", tac[i].lhs);
+                sprintf(newTAC[newCount].rhs, "%s", val);
+                if (isNumber(val)) {
+                    strcpy(constants[const_count].key, tac[i].lhs);
+                    strcpy(constants[const_count++].value, val);
+                }
+            }
+            newCount++;
+        }
+
+        for (int i = 0; i < newCount; ++i)
+            tac[i] = newTAC[i];
+        tac_count = newCount;
+
+    } while (changed);
+}
+
+void printTAC() {
+    for (int i = 0; i < tac_count; ++i)
+        printf("%s = %s;\n", tac[i].lhs, tac[i].rhs);
+}
+
+void printOptimizedCode() {
+    printf("\nint main()\n{\n");
+    for (int i = 0; i < tac_count; ++i)
+        printf("    %s = %s;\n", tac[i].lhs, tac[i].rhs);
+    printf("}\n");
+}
+
+int main() {
+    int choice;
+    char filename[MAX_LEN], line[256];
+
+    printf("Choose Optimization Type:\n1. Constant Folding\n2. Constant Propagation\n3. Both\nEnter choice: ");
+    scanf("%d", &choice);
+
+    printf("Enter C input file name: ");
+    scanf("%s", filename);
+
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    tac_count = const_count = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        parseLine(line);
+    }
+    fclose(fp);
+
+    printf("\n============= Original Three Address Code ==============\n\n");
+    printTAC();
+
+    switch (choice) {
+        case 1:
+            constantFolding();
+            break;
+        case 2:
+            constantPropagation();
+            break;
+        case 3:
+            constantFolding();
+            constantPropagation();
+            constantFolding();
+            break;
+        default:
+            printf("Invalid choice\n");
+            return 1;
+    }
+
+    printf("\n============= Optimized Code ==============\n");
+    printOptimizedCode();
+
+    return 0;
+}
+
