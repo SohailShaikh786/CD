@@ -1,0 +1,159 @@
+#include <iostream>
+#include <stack>
+#include <vector>
+#include <map>
+#include <sstream>
+#include <regex>
+
+using namespace std;
+
+int precedence(const string& op) {
+    if (op == "+" || op == "-") return 1;
+    if (op == "*" || op == "/") return 2;
+    return 0;
+}
+
+vector<string> tokenize(const string& expr) {
+    vector<string> tokens;
+    regex token_regex("[a-zA-Z]\\w*|\\d+|[+*/=()\\-]");
+    auto words_begin = sregex_iterator(expr.begin(), expr.end(), token_regex);
+    auto words_end = sregex_iterator();
+    for (auto i = words_begin; i != words_end; ++i) {
+        tokens.push_back(i->str());
+    }
+    return tokens;
+}
+
+vector<string> infixToPostfix(const vector<string>& tokens) {
+    vector<string> output;
+    stack<string> op_stack;
+
+    for (const auto& token : tokens) {
+        if (isalnum(token[0])) {
+            output.push_back(token);
+        } else if (token == "(") {
+            op_stack.push(token);
+        } else if (token == ")") {
+            while (!op_stack.empty() && op_stack.top() != "(") {
+                output.push_back(op_stack.top());
+                op_stack.pop();
+            }
+            if (!op_stack.empty()) op_stack.pop(); // Pop '('
+        } else { // operator
+            while (!op_stack.empty() && precedence(token) <= precedence(op_stack.top())) {
+                output.push_back(op_stack.top());
+                op_stack.pop();
+            }
+            op_stack.push(token);
+        }
+    }
+
+    while (!op_stack.empty()) {
+        output.push_back(op_stack.top());
+        op_stack.pop();
+    }
+
+    return output;
+}
+
+struct Quadruple {
+    string op, arg1, arg2, result;
+    Quadruple(string o, string a1, string a2, string r) : op(o), arg1(a1), arg2(a2), result(r) {}
+    string str() const {
+        return "(" + op + ", " + arg1 + ", " + arg2 + ", " + result + ")";
+    }
+};
+
+vector<Quadruple> generate_TAC(const vector<string>& postfix, const string& lhs) {
+    int temp_count = 1;
+    vector<Quadruple> quads;
+    stack<string> stk;
+    map<tuple<string, string, string>, string> expr_map;
+    vector<tuple<string, string, string>> cse_applied;
+
+    cout << "\n\n============= Three Address Code ==============\n" << endl;
+
+    for (const auto& token : postfix) {
+        if (token == "+" || token == "-" || token == "*" || token == "/") {
+            string op2 = stk.top(); stk.pop();
+            string op1 = stk.top(); stk.pop();
+            auto expr = make_tuple(token, op1, op2);
+
+            if (expr_map.find(expr) != expr_map.end()) {
+                string temp = expr_map[expr];
+                cout << "Reusing common subexpression " << op1 << " " << token << " " << op2 << " -> " << temp << endl;
+                stk.push(temp);
+                cse_applied.push_back(expr);
+            } else {
+                string temp = "t" + to_string(temp_count++);
+                quads.push_back(Quadruple(token, op1, op2, temp));
+                expr_map[expr] = temp;
+                stk.push(temp);
+                cout << "Generated: " << temp << " = " << op1 << " " << token << " " << op2 << endl;
+            }
+        } else {
+            stk.push(token);
+        }
+    }
+
+    string final_result = stk.top(); stk.pop();
+    quads.push_back(Quadruple("=", final_result, "-", lhs));
+    cout << "Assignment: " << lhs << " = " << final_result << endl;
+    cout << "\n============ XXXXXXXXXXXXXXXXXX ==============\n" << endl;
+
+    cout << "\n===== Optimization Method Used =====\n" << endl;
+    if (!cse_applied.empty()) {
+        cout << "Common Subexpression Elimination (CSE) applied to:\n" << endl;
+        for (const auto& expr : cse_applied) {
+            cout << "    " << get<1>(expr) << " " << get<0>(expr) << " " << get<2>(expr) << "\n" << endl;
+        }
+    } else {
+        cout << "No common subexpressions found. No CSE applied." << endl;
+    }
+    cout << "===== XXXXXXXXXXXXXXXXXXXXXXXX =====\n" << endl;
+
+    return quads;
+}
+
+void printQuadruples(const string& title, const vector<Quadruple>& quads) {
+    cout << "\n--- " << title << " ---\n" << endl;
+    for (size_t i = 0; i < quads.size(); ++i) {
+        cout << i << ": " << quads[i].str() << endl;
+    }
+}
+
+int main() {
+    cout << "\nCommon Subexpression Elimination\n" << endl;
+    cout << "Enter the expression (e.g., a = b * c + b * c + d): ";
+    string expr;
+    getline(cin, expr);
+
+    size_t eq_pos = expr.find('=');
+    if (eq_pos == string::npos) {
+        cout << "Invalid expression! Must contain '='." << endl;
+        return 1;
+    }
+
+    string lhs = expr.substr(0, eq_pos);
+    string rhs = expr.substr(eq_pos + 1);
+    lhs.erase(remove(lhs.begin(), lhs.end(), ' '), lhs.end());
+    rhs.erase(remove(rhs.begin(), rhs.end(), ' '), rhs.end());
+
+    vector<string> rhs_tokens = tokenize(rhs);
+    vector<string> postfix = infixToPostfix(rhs_tokens);
+
+    // cout << "\n========== Postfix Expression ============\n" << endl;
+    // for (const auto& token : postfix) {
+    //     cout << token << " ";
+    // }
+    // cout << "\n\n========== XXXXXXXXXXXXXXXXXX ============\n";
+
+    vector<Quadruple> optimized_quads = generate_TAC(postfix, lhs);
+
+    printQuadruples("Optimized Quadruples with CSE", optimized_quads);
+
+    cout << "\n--------------------------------------\n";
+
+    return 0;
+}
+
