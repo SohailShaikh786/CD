@@ -1,0 +1,146 @@
+import java.util.*;
+import java.util.regex.*;
+
+class Quadruple {
+    String op, arg1, arg2, result;
+
+    public Quadruple(String op, String arg1, String arg2, String result) {
+        this.op = op;
+        this.arg1 = arg1;
+        this.arg2 = arg2;
+        this.result = result;
+    }
+
+    public String toString() {
+        return "(" + op + ", " + arg1 + ", " + arg2 + ", " + result + ")";
+    }
+}
+
+public class cse {
+
+    static int precedence(String op) {
+        if (op.equals("+") || op.equals("-")) return 1;
+        if (op.equals("*") || op.equals("/")) return 2;
+        return 0;
+    }
+
+    static List<String> tokenize(String expr) {
+        List<String> tokens = new ArrayList<>();
+        Matcher m = Pattern.compile("[a-zA-Z]\\w*|\\d+|[+*/=()\\-]").matcher(expr);
+        while (m.find()) {
+            tokens.add(m.group());
+        }
+        return tokens;
+    }
+
+    static List<String> infixToPostfix(List<String> tokens) {
+        List<String> output = new ArrayList<>();
+        Stack<String> stack = new Stack<>();
+
+        for (String token : tokens) {
+            if (Character.isLetterOrDigit(token.charAt(0))) {
+                output.add(token);
+            } else if (token.equals("(")) {
+                stack.push(token);
+            } else if (token.equals(")")) {
+                while (!stack.isEmpty() && !stack.peek().equals("(")) {
+                    output.add(stack.pop());
+                }
+                if (!stack.isEmpty()) stack.pop(); // Remove '('
+            } else { // Operator
+                while (!stack.isEmpty() && precedence(token) <= precedence(stack.peek())) {
+                    output.add(stack.pop());
+                }
+                stack.push(token);
+            }
+        }
+
+        while (!stack.isEmpty()) {
+            output.add(stack.pop());
+        }
+
+        return output;
+    }
+
+    static List<Quadruple> generateTAC(List<String> postfix, String lhs) {
+        int tempCount = 1;
+        List<Quadruple> quads = new ArrayList<>();
+        Stack<String> stk = new Stack<>();
+        Map<List<String>, String> exprMap = new HashMap<>();
+        List<List<String>> cseApplied = new ArrayList<>();
+
+        System.out.println("\n\n============= Three Address Code ==============\n");
+
+        for (String token : postfix) {
+            if (token.equals("+") || token.equals("-") || token.equals("*") || token.equals("/")) {
+                String op2 = stk.pop();
+                String op1 = stk.pop();
+                List<String> expr = Arrays.asList(token, op1, op2);
+
+                if (exprMap.containsKey(expr)) {
+                    String temp = exprMap.get(expr);
+                    System.out.println("Reusing common subexpression " + op1 + " " + token + " " + op2 + " -> " + temp);
+                    stk.push(temp);
+                    cseApplied.add(expr);
+                } else {
+                    String temp = "t" + tempCount++;
+                    quads.add(new Quadruple(token, op1, op2, temp));
+                    exprMap.put(expr, temp);
+                    stk.push(temp);
+                    System.out.println("Generated: " + temp + " = " + op1 + " " + token + " " + op2);
+                }
+            } else {
+                stk.push(token);
+            }
+        }
+
+        String finalResult = stk.pop();
+        quads.add(new Quadruple("=", finalResult, "-", lhs));
+        System.out.println("Assignment: " + lhs + " = " + finalResult);
+        System.out.println("\n============ XXXXXXXXXXXXXXXXXX ==============\n");
+
+        System.out.println("\n===== Optimization Method Used =====\n");
+        if (!cseApplied.isEmpty()) {
+            System.out.println("Common Subexpression Elimination (CSE) applied to:\n");
+            for (List<String> expr : cseApplied) {
+                System.out.println("    " + expr.get(1) + " " + expr.get(0) + " " + expr.get(2));
+            }
+        } else {
+            System.out.println("No common subexpressions found. No CSE applied.");
+        }
+        System.out.println("===== XXXXXXXXXXXXXXXXXXXXXXXX =====\n");
+
+        return quads;
+    }
+
+    static void printQuadruples(String title, List<Quadruple> quads) {
+        System.out.println("\n--- " + title + " ---\n");
+        for (int i = 0; i < quads.size(); i++) {
+            System.out.println(i + ": " + quads.get(i));
+        }
+    }
+
+    public static void main(String[] args) {
+        @SuppressWarnings("resource")
+        Scanner sc = new Scanner(System.in);
+        System.out.println("\nCommon Subexpression Elimination\n");
+        System.out.print("Enter the expression (e.g., a = b * c + b * c + d): ");
+        String expr = sc.nextLine();
+
+        int eqPos = expr.indexOf('=');
+        if (eqPos == -1) {
+            System.out.println("Invalid expression! Must contain '='.");
+            return;
+        }
+
+        String lhs = expr.substring(0, eqPos).replaceAll("\\s+", "");
+        String rhs = expr.substring(eqPos + 1).replaceAll("\\s+", "");
+
+        List<String> rhsTokens = tokenize(rhs);
+        List<String> postfix = infixToPostfix(rhsTokens);
+        List<Quadruple> optimizedQuads = generateTAC(postfix, lhs);
+
+        printQuadruples("Optimized Quadruples with CSE", optimizedQuads);
+        System.out.println("\n--------------------------------------\n");
+    }
+}
