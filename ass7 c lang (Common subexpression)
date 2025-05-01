@@ -1,0 +1,222 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MAX_TOKENS 100
+#define MAX_EXPR_LEN 256
+#define MAX_STACK 100
+#define MAX_QUADS 100
+
+typedef struct {
+    char op[5];
+    char arg1[20];
+    char arg2[20];
+    char result[20];
+} Quadruple;
+
+typedef struct {
+    char items[MAX_STACK][20];
+    int top;
+} Stack;
+
+void push(Stack* s, const char* val) {
+    if (s->top < MAX_STACK - 1) {
+        strcpy(s->items[++(s->top)], val);
+    }
+}
+
+char* pop(Stack* s) {
+    if (s->top >= 0) {
+        return s->items[(s->top)--];
+    }
+    return NULL;
+}
+
+char* peek(Stack* s) {
+    if (s->top >= 0) {
+        return s->items[s->top];
+    }
+    return NULL;
+}
+
+int precedence(const char* op) {
+    if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0) return 1;
+    if (strcmp(op, "*") == 0 || strcmp(op, "/") == 0) return 2;
+    return 0;
+}
+
+int isOperator(char c) {
+    return c == '+' || c == '-' || c == '*' || c == '/';
+}
+
+void tokenize(const char* expr, char tokens[MAX_TOKENS][20], int* count) {
+    *count = 0;
+    int i = 0;
+    while (*expr) {
+        if (isspace(*expr)) {
+            expr++;
+            continue;
+        }
+
+        if (isalpha(*expr)) {
+            int j = 0;
+            while (isalnum(*expr)) {
+                tokens[i][j++] = *expr;
+                expr++;
+            }
+            tokens[i][j] = '\0';
+            i++;
+        } else if (isdigit(*expr)) {
+            int j = 0;
+            while (isdigit(*expr)) {
+                tokens[i][j++] = *expr;
+                expr++;
+            }
+            tokens[i][j] = '\0';
+            i++;
+        } else {
+            tokens[i][0] = *expr;
+            tokens[i][1] = '\0';
+            expr++;
+            i++;
+        }
+    }
+    *count = i;
+}
+
+void infixToPostfix(char tokens[MAX_TOKENS][20], int token_count, char postfix[MAX_TOKENS][20], int* postfix_count) {
+    Stack op_stack = {.top = -1};
+    *postfix_count = 0;
+
+    for (int i = 0; i < token_count; i++) {
+        char* token = tokens[i];
+        if (isalnum(token[0])) {
+            strcpy(postfix[(*postfix_count)++], token);
+        } else if (strcmp(token, "(") == 0) {
+            push(&op_stack, token);
+        } else if (strcmp(token, ")") == 0) {
+            while (op_stack.top >= 0 && strcmp(peek(&op_stack), "(") != 0) {
+                strcpy(postfix[(*postfix_count)++], pop(&op_stack));
+            }
+            if (op_stack.top >= 0) pop(&op_stack); // pop "("
+        } else {
+            while (op_stack.top >= 0 && precedence(token) <= precedence(peek(&op_stack))) {
+                strcpy(postfix[(*postfix_count)++], pop(&op_stack));
+            }
+            push(&op_stack, token);
+        }
+    }
+
+    while (op_stack.top >= 0) {
+        strcpy(postfix[(*postfix_count)++], pop(&op_stack));
+    }
+}
+
+int expr_equal(const char* a1, const char* a2, const char* op, const char* b1, const char* b2, const char* bop) {
+    return (strcmp(op, bop) == 0) &&
+           ((strcmp(a1, b1) == 0 && strcmp(a2, b2) == 0) ||
+            (strcmp(op, "+") == 0 || strcmp(op, "*") == 0) && (strcmp(a1, b2) == 0 && strcmp(a2, b1) == 0));
+}
+
+int generate_TAC(char postfix[MAX_TOKENS][20], int postfix_count, const char* lhs, Quadruple quads[MAX_QUADS]) {
+    Stack stk = {.top = -1};
+    int temp_count = 1, quad_count = 0;
+
+    printf("\n============= Three Address Code ==============\n");
+
+    for (int i = 0; i < postfix_count; i++) {
+        char* token = postfix[i];
+        if (isOperator(token[0]) && strlen(token) == 1) {
+            char op2[20], op1[20];
+            strcpy(op2, pop(&stk));
+            strcpy(op1, pop(&stk));
+
+            int reused = 0;
+            for (int j = 0; j < quad_count; j++) {
+                if (expr_equal(op1, op2, token, quads[j].arg1, quads[j].arg2, quads[j].op)) {
+                    printf("Reusing common subexpression %s %s %s -> %s\n", op1, token, op2, quads[j].result);
+                    push(&stk, quads[j].result);
+                    reused = 1;
+                    break;
+                }
+            }
+
+            if (!reused) {
+                sprintf(quads[quad_count].op, "%s", token);
+                sprintf(quads[quad_count].arg1, "%s", op1);
+                sprintf(quads[quad_count].arg2, "%s", op2);
+                sprintf(quads[quad_count].result, "t%d", temp_count++);
+                push(&stk, quads[quad_count].result);
+                printf("Generated: %s = %s %s %s\n", quads[quad_count].result, op1, token, op2);
+                quad_count++;
+            }
+        } else {
+            push(&stk, token);
+        }
+    }
+
+    char final_result[20];
+    strcpy(final_result, pop(&stk));
+
+    sprintf(quads[quad_count].op, "=");
+    sprintf(quads[quad_count].arg1, "%s", final_result);
+    sprintf(quads[quad_count].arg2, "-");
+    sprintf(quads[quad_count].result, "%s", lhs);
+    printf("Assignment: %s = %s\n", lhs, final_result);
+    quad_count++;
+
+    printf("============ XXXXXXXXXXXXXXXXXX ==============\n");
+    return quad_count;
+}
+
+void printQuadruples(Quadruple quads[MAX_QUADS], int count) {
+    printf("\n--- Optimized Quadruples with CSE ---\n");
+    for (int i = 0; i < count; i++) {
+        printf("%d: (%s, %s, %s, %s)\n", i, quads[i].op, quads[i].arg1, quads[i].arg2, quads[i].result);
+    }
+}
+
+int main() {
+    char expr[MAX_EXPR_LEN];
+    char lhs[20], rhs[MAX_EXPR_LEN];
+    char tokens[MAX_TOKENS][20], postfix[MAX_TOKENS][20];
+    int token_count, postfix_count;
+    Quadruple quads[MAX_QUADS];
+
+    printf("\nCommon Subexpression Elimination (C Version)\n");
+    printf("Enter the expression (e.g., a = b * c + b * c + d): ");
+    fgets(expr, sizeof(expr), stdin);
+
+    char* eq_pos = strchr(expr, '=');
+    if (!eq_pos) {
+        printf("Invalid expression! Must contain '='.\n");
+        return 1;
+    }
+
+    strncpy(lhs, expr, eq_pos - expr);
+    lhs[eq_pos - expr] = '\0';
+    strcpy(rhs, eq_pos + 1);
+
+    // remove spaces
+    char* p1 = lhs, *p2 = lhs;
+    while (*p2) {
+        if (!isspace(*p2)) *p1++ = *p2;
+        p2++;
+    }
+    *p1 = '\0';
+
+    p1 = rhs; p2 = rhs;
+    while (*p2) {
+        if (!isspace(*p2)) *p1++ = *p2;
+        p2++;
+    }
+    *p1 = '\0';
+
+    tokenize(rhs, tokens, &token_count);
+    infixToPostfix(tokens, token_count, postfix, &postfix_count);
+    int quad_count = generate_TAC(postfix, postfix_count, lhs, quads);
+    printQuadruples(quads, quad_count);
+
+    return 0;
+}
